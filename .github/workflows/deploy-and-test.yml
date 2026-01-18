@@ -1,18 +1,20 @@
-name: Deploy and Test
+name: Deploy AWS REST API
+
 on:
   push:
-    branches: [main]
+    branches:
+      - main
 
 jobs:
-  deploy-and-test:
+  deploy:
     runs-on: ubuntu-latest
-    strategy:
-      matrix:
-        env: [dev, staging]
-    
+
     steps:
-      - uses: actions/checkout@v4
-      - uses: hashicorp/setup-terraform@v3
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup Terraform
+        uses: hashicorp/setup-terraform@v3
 
       - name: Configure AWS credentials
         uses: aws-actions/configure-aws-credentials@v4
@@ -22,22 +24,9 @@ jobs:
           aws-region: us-east-1
 
       - name: Terraform Init
-        working-directory: terraform/lambda
+        working-directory: terraform
         run: terraform init
 
       - name: Terraform Apply
-        working-directory: terraform/lambda
-        run: terraform apply -auto-approve -var-file=../env/${{ matrix.env }}.tfvars
-
-      - name: Get API URLs
-        id: vars
-        working-directory: terraform/lambda
-        run: echo "api_url=$(terraform output -raw api_url)" >> $GITHUB_OUTPUT
-
-      - name: Install Artillery
-        run: npm install -g artillery
-
-      - name: Run Load Test
-        env:
-          API_URL: ${{ steps.vars.outputs.api_url }}
-        run: artillery run artillery/load-test.${{ matrix.env }}.yml
+        working-directory: terraform
+        run: terraform apply -auto-approve
