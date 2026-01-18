@@ -1,4 +1,4 @@
-name: Deploy and Performance Test
+name: Deploy and Test
 on:
   push:
     branches: [main]
@@ -27,20 +27,17 @@ jobs:
 
       - name: Terraform Apply
         working-directory: terraform/lambda
-        # FIXED PATH: Points to ../env/
         run: terraform apply -auto-approve -var-file=../env/${{ matrix.env }}.tfvars
 
-      - name: Capture API URL
-        id: get-url
+      - name: Get API URL
+        id: vars
         working-directory: terraform/lambda
         run: echo "api_url=$(terraform output -raw api_url)" >> $GITHUB_OUTPUT
 
       - name: Install Artillery
         run: npm install -g artillery
 
-      - name: Run Artillery Tests
+      - name: Run Load Test
         env:
-          # Uses the URL from the current matrix iteration
-          API_URL: ${{ steps.get-url.outputs.api_url }}
-        run: |
-          artillery run artillery/load-test.${{ matrix.env }}.yml
+          API_URL: ${{ steps.vars.outputs.api_url }}
+        run: artillery run artillery/load-test.${{ matrix.env }}.yml
