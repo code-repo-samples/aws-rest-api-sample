@@ -1,6 +1,6 @@
 data "archive_file" "lambda_zip" {
   type        = "zip"
-  source_file = "../lambda/lambda_function.py"
+  source_file = "../../app/lambda_function.py"
   output_path = "lambda.zip"
 }
 
