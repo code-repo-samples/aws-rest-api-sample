@@ -15,7 +15,6 @@ jobs:
 
     outputs:
       api_url: ${{ steps.output-url.outputs.api_url }}
-      env: ${{ matrix.env }}
 
     steps:
       - uses: actions/checkout@v4
@@ -30,19 +29,17 @@ jobs:
           aws-region: us-east-1
 
       - name: Terraform Init
-        working-directory: terraform
+        working-directory: terraform/lambda
         run: terraform init
 
-      - name: Terraform Apply (${{ matrix.env }})
-        working-directory: terraform
+      - name: Terraform Apply
+        working-directory: terraform/lambda
         run: |
-          terraform apply \
-            -auto-approve \
-            -var-file=env/${{ matrix.env }}.tfvars
+          terraform apply -auto-approve -var-file=env/${{ matrix.env }}.tfvars
 
       - name: Capture API URL
         id: output-url
-        working-directory: terraform
+        working-directory: terraform/lambda
         run: |
           echo "api_url=$(terraform output -raw api_url)" >> $GITHUB_OUTPUT
 
@@ -60,7 +57,7 @@ jobs:
       - name: Install Artillery
         run: npm install -g artillery
 
-      - name: Run Artillery Tests (${{ matrix.env }})
+      - name: Run Artillery Tests
         env:
           API_URL: ${{ needs.deploy.outputs.api_url }}
         run: |
