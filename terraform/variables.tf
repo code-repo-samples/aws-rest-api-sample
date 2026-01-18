@@ -1,7 +1,3 @@
-/**
- * Environment-aware variables
- */
-
 variable "environment" {
   description = "Deployment environment (dev or staging)"
   type        = string
