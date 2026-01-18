@@ -1,0 +1,18 @@
+config:
+  target: "{{ $processEnvironment.API_URL }}"
+  phases:
+    - duration: 60
+      arrivalRate: 10
+  defaults:
+    headers:
+      Content-Type: application/json
+
+scenarios:
+  - name: Staging GET and POST
+    flow:
+      - get:
+          url: /items
+      - post:
+          url: /items
+          json:
+            name: "staging-test"
