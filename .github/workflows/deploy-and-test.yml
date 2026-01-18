@@ -9,15 +9,20 @@ jobs:
   deploy:
     runs-on: ubuntu-latest
 
+    strategy:
+      matrix:
+        env: [dev, staging]
+
     outputs:
       api_url: ${{ steps.output-url.outputs.api_url }}
+      env: ${{ matrix.env }}
 
     steps:
       - uses: actions/checkout@v4
 
       - uses: hashicorp/setup-terraform@v3
 
-      - name: Configure AWS credentials (Access Keys)
+      - name: Configure AWS credentials
         uses: aws-actions/configure-aws-credentials@v4
         with:
           aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
@@ -28,9 +33,12 @@ jobs:
         working-directory: terraform
         run: terraform init
 
-      - name: Terraform Apply
+      - name: Terraform Apply (${{ matrix.env }})
         working-directory: terraform
-        run: terraform apply -auto-approve
+        run: |
+          terraform apply \
+            -auto-approve \
+            -var-file=env/${{ matrix.env }}.tfvars
 
       - name: Capture API URL
         id: output-url
@@ -42,13 +50,18 @@ jobs:
     needs: deploy
     runs-on: ubuntu-latest
 
+    strategy:
+      matrix:
+        env: [dev, staging]
+
     steps:
       - uses: actions/checkout@v4
 
       - name: Install Artillery
         run: npm install -g artillery
 
-      - name: Run Artillery Tests
+      - name: Run Artillery Tests (${{ matrix.env }})
         env:
           API_URL: ${{ needs.deploy.outputs.api_url }}
-        run: artillery run artillery/load-test.yml
+        run: |
+          artillery run artillery/load-test.${{ matrix.env }}.yml
