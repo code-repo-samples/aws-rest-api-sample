@@ -1,5 +1,5 @@
 """
-AWS Lambda REST API with fault injection.
+AWS Lambda REST  API with fault injection.
 
 Features:
 - GET /items
