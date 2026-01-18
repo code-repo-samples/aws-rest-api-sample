@@ -29,7 +29,7 @@ jobs:
         working-directory: terraform/lambda
         run: terraform apply -auto-approve -var-file=../env/${{ matrix.env }}.tfvars
 
-      - name: Get API URL
+      - name: Get API URLs
         id: vars
         working-directory: terraform/lambda
         run: echo "api_url=$(terraform output -raw api_url)" >> $GITHUB_OUTPUT
