@@ -1,0 +1,52 @@
+name: Deploy and Performance Test
+
+on:
+  push:
+    branches:
+      - main
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+
+    outputs:
+      api_url: ${{ steps.output-url.outputs.api_url }}
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: hashicorp/setup-terraform@v3
+
+      - uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: arn:aws:iam::123456789012:role/github-terraform-deployer
+          aws-region: us-east-1
+
+      - name: Terraform Init
+        working-directory: terraform
+        run: terraform init
+
+      - name: Terraform Apply
+        working-directory: terraform
+        run: terraform apply -auto-approve
+
+      - name: Capture API URL
+        id: output-url
+        working-directory: terraform
+        run: |
+          echo "api_url=$(terraform output -raw api_url)" >> $GITHUB_OUTPUT
+
+  performance-test:
+    needs: deploy
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Artillery
+        run: npm install -g artillery
+
+      - name: Run Artillery Tests
+        env:
+          API_URL: ${{ needs.deploy.outputs.api_url }}
+        run: artillery run artillery/load-test.yml
