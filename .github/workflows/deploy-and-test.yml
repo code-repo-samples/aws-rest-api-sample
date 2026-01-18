@@ -1,24 +1,17 @@
 name: Deploy and Performance Test
-
 on:
   push:
-    branches:
-      - main
+    branches: [main]
 
 jobs:
-  deploy:
+  deploy-and-test:
     runs-on: ubuntu-latest
-
     strategy:
       matrix:
         env: [dev, staging]
-
-    outputs:
-      api_url: ${{ steps.output-url.outputs.api_url }}
-
+    
     steps:
       - uses: actions/checkout@v4
-
       - uses: hashicorp/setup-terraform@v3
 
       - name: Configure AWS credentials
@@ -34,31 +27,20 @@ jobs:
 
       - name: Terraform Apply
         working-directory: terraform/lambda
-        run: |
-          terraform apply -auto-approve -var-file=env/${{ matrix.env }}.tfvars
+        # FIXED PATH: Points to ../env/
+        run: terraform apply -auto-approve -var-file=../env/${{ matrix.env }}.tfvars
 
       - name: Capture API URL
-        id: output-url
+        id: get-url
         working-directory: terraform/lambda
-        run: |
-          echo "api_url=$(terraform output -raw api_url)" >> $GITHUB_OUTPUT
-
-  performance-test:
-    needs: deploy
-    runs-on: ubuntu-latest
-
-    strategy:
-      matrix:
-        env: [dev, staging]
-
-    steps:
-      - uses: actions/checkout@v4
+        run: echo "api_url=$(terraform output -raw api_url)" >> $GITHUB_OUTPUT
 
       - name: Install Artillery
         run: npm install -g artillery
 
       - name: Run Artillery Tests
         env:
-          API_URL: ${{ needs.deploy.outputs.api_url }}
+          # Uses the URL from the current matrix iteration
+          API_URL: ${{ steps.get-url.outputs.api_url }}
         run: |
           artillery run artillery/load-test.${{ matrix.env }}.yml
