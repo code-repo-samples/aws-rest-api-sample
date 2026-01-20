@@ -130,6 +130,7 @@ jobs:
 
       # 9️⃣ Download all S3 artifacts under this runId
       - name: Download S3 artifacts
+        if: always()
         env:
           BUCKET_NAME: ${{ secrets.ARTILLERY_METRICS_BUCKET }}
         run: |
@@ -150,6 +151,7 @@ jobs:
 
       # 🔟 Upload all reports as GitHub artifact (v4)
       - name: Upload reports
+        if: always()
         uses: actions/upload-artifact@v4
         with:
           name: artillery-reports-${{ github.event.inputs.app-folder }}
