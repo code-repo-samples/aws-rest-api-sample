@@ -49,11 +49,6 @@ jobs:
       # 3️⃣ Install dependencies
       - name: Install dependencies
         run: |
-          if [ -f package-lock.json ]; then
-            npm ci
-          else
-            npm install
-          fi
           npm install -g artillery@2.0.21
 
       # 4️⃣ Verify app folder and script exist
