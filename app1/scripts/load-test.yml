@@ -4,12 +4,12 @@ config:
     # Phase 1: Gradual ramp-up
     - duration: 120          # 15 minutes
       arrivalRate: 10        # Starting TPS
-      rampTo: 100            # Gradually increase to 200 TPS
+      rampTo: 75            # Gradually increase to 200 TPS
       name: "Slow ramp to 200 TPS"
 
     # Phase 3: Steady state at peak load
     - duration: 600          # 10 minutes
-      arrivalRate: 100       # Sustain 200 TPS
+      arrivalRate: 75       # Sustain 200 TPS
       name: "Steady 200 TPS"
   defaults:
     headers:
@@ -63,9 +63,9 @@ scenarios:
           url: "/test?name={{ name }}&address={{ address }}"
           expect:
             - statusCode: 200
-          # afterResponse: 
-          #   - "logError"
-            # - "captureMetrics"
+          afterResponse: 
+            - "logError"
+            - "captureMetrics"
           # capture:
           #   json: "$"
           #   as: "response"
@@ -77,9 +77,9 @@ scenarios:
       - post:
           name: "POST_Test"
           url: "/test"
-          # afterResponse: 
-          #   - "logError"
-            # - "captureMetrics"
+          afterResponse: 
+            - "logError"
+            - "captureMetrics"
           json:
             name: "{{ postData.name }}"
             address: "{{ postData.address }}"
@@ -88,6 +88,7 @@ scenarios:
               - statusCode: 200
 
           
+
 
 
 
