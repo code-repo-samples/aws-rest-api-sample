@@ -103,11 +103,11 @@ const IDS_FILE = path.join(RESULTS_DIR, 'created_products.txt');
 // console.log('📝 Metrics file:', METRICS_FILE);
 // console.log('📝 Product IDs file:', IDS_FILE);
 
-if (isFargate) {
-  console.log('🧪 ARTILLERY_TEST_RUN_ID:', ARTILLERY_RUN_ID);
-  console.log('📦 S3 Upload Prefix:', S3_RUN_PREFIX);
-  console.log('🪣 S3 Bucket:', S3_BUCKET);
-}
+// if (isFargate) {
+//   console.log('🧪 ARTILLERY_TEST_RUN_ID:', ARTILLERY_RUN_ID);
+//   console.log('📦 S3 Upload Prefix:', S3_RUN_PREFIX);
+//   console.log('🪣 S3 Bucket:', S3_BUCKET);
+// }
 
 /**
  * ------------------------------------------------------------
@@ -164,7 +164,7 @@ async function flushToS3(localPath, filename) {
       })
       .promise();
 
-    console.log(`✅ Flushed to s3://${S3_BUCKET}/${s3Key}`);
+    // console.log(`✅ Flushed to s3://${S3_BUCKET}/${s3Key}`);
   } catch (err) {
     console.error('❌ S3 flush failed:', err);
   }
@@ -284,11 +284,11 @@ let shuttingDown = false;
 function logResponse(requestParams, response, userContext, ee, next) {
   if (response.statusCode >= 400) {
     globalErrorCount++;
-    console.log(`⚠️ Error #${globalErrorCount}: ${response.statusCode}`);
+    // console.log(`⚠️ Error #${globalErrorCount}: ${response.statusCode}`);
 
     if (!shuttingDown && globalErrorCount >= ERROR_THRESHOLD) {
       shuttingDown = true;
-      console.log('🚨 Error threshold reached — shutting down...');
+      // console.log('🚨 Error threshold reached — shutting down...');
       setTimeout(() => process.kill(process.pid, 'SIGTERM'), 50);
     }
   }
@@ -308,3 +308,4 @@ module.exports = {
   logProductId,
   logResponse
 };
+
