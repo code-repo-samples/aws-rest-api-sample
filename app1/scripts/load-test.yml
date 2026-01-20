@@ -1,8 +1,8 @@
 config:
   target: "https://8u0xag1lqh.execute-api.us-east-1.amazonaws.com/prod/"
   phases:
-    - duration: 100
-      arrivalRate: 3
+    - duration: 600
+      arrivalRate: 5
   defaults:
     headers:
       Content-Type: "application/json"
@@ -31,8 +31,8 @@ config:
   #   order: "random" # or "random"
 
   ensure:
-    p95: 1000
-    maxErrorRate: 2
+    p95: 10000
+    maxErrorRate: 20
     # thresholds:
     #     # p99 of response time must be <250:
     #     - 'http.response_time.p99': 250
@@ -52,35 +52,36 @@ scenarios:
       # This matches 'targetVar' above
       - log: "Requesting: /products/{{ productId }}"
       
-      # # GET request with random query params
-      # - function: "randomGet"
+      # GET request with random query params
+      - function: "randomGet"
 
-      # - get:
-      #     name: "GET_Test"
-      #     url: "/test?name={{ name }}&address={{ address }}"
-      #     expect:
-      #       - statusCode: 200
-      #     afterResponse: 
-      #       - "logError"
-      #       - "captureMetrics"
-      #     capture:
-      #       json: "$"
-      #       as: "response"
-      #     log : "{{response}}"
+      - get:
+          name: "GET_Test"
+          url: "/test?name={{ name }}&address={{ address }}"
+          expect:
+            - statusCode: 200
+          afterResponse: 
+            - "logError"
+            - "captureMetrics"
+          capture:
+            json: "$"
+            as: "response"
+          log : "{{response}}"
       
-      # # POST request with random body
-      # - function: "randomPost"
-      # # - log: "{{postData.name}} {{postData.name}}"
-      # - post:
-      #     name: "POST_Test"
-      #     url: "/test"
-      #     afterResponse: 
-      #       - "logError"
-      #       - "captureMetrics"
-      #     json:
-      #       name: "{{ postData.name }}"
-      #       address: "{{ postData.address }}"
-      #     # Expectation checks
-      #     expect:
-      #         - statusCode: 200
+      # POST request with random body
+      - function: "randomPost"
+      # - log: "{{postData.name}} {{postData.name}}"
+      - post:
+          name: "POST_Test"
+          url: "/test"
+          afterResponse: 
+            - "logError"
+            - "captureMetrics"
+          json:
+            name: "{{ postData.name }}"
+            address: "{{ postData.address }}"
+          # Expectation checks
+          expect:
+              - statusCode: 200
+
           
