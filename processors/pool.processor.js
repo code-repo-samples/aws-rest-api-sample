@@ -115,7 +115,7 @@ function pullFromPool(userContext, events, done) {
   if (!pools[fileName]) {
     const csvPath = path.resolve(PROJECT_ROOT, fileName);
 
-    console.log('📄 Loading CSV:', csvPath);
+    // console.log('📄 Loading CSV:', csvPath);
 
     if (!fs.existsSync(csvPath)) {
       return done(new Error(`CSV not found at path: ${csvPath}`));
@@ -151,7 +151,7 @@ function pullFromPool(userContext, events, done) {
     if (resetPointer && !pointerResetDone[fileName]) {
       fs.writeFileSync(pointerFile, '0');
       pointerResetDone[fileName] = true;
-      console.log('🔄 Pointer reset:', pointerFile);
+      // console.log('🔄 Pointer reset:', pointerFile);
     }
 
     /**
@@ -217,3 +217,4 @@ function pullFromPool(userContext, events, done) {
  * ------------------------------------------------------------
  */
 module.exports = { pullFromPool };
+
