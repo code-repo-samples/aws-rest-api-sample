@@ -27,11 +27,11 @@ jobs:
 
       # 1️⃣ Checkout repo
       - name: Checkout repository
-        uses: actions/checkout@v3
+        uses: actions/checkout@v4
 
       # 2️⃣ Setup Node.js
       - name: Setup Node.js
-        uses: actions/setup-node@v3
+        uses: actions/setup-node@v4
         with:
           node-version: 20
 
@@ -117,7 +117,7 @@ jobs:
 
       # 9️⃣ Upload all reports as GitHub artifact
       - name: Upload reports
-        uses: actions/upload-artifact@v3
+        uses: actions/upload-artifact@v4
         with:
           name: artillery-reports-${{ github.event.inputs.app-folder }}
           path: ${{ env.ARTIFACTS_DIR }}/
