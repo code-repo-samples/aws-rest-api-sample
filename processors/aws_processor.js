@@ -88,10 +88,10 @@ const ERROR_LOG_FILE = path.join(RESULTS_DIR, 'error.log');
 // console.log('📁 Error log directory:', RESULTS_DIR);
 // console.log('📝 Error log file:', ERROR_LOG_FILE);
 
-if (isFargate) {
-  console.log('🧪 ARTILLERY_TEST_RUN_ID:', ARTILLERY_RUN_ID);
-  console.log('📦 S3 Upload Prefix:', S3_RUN_PREFIX);
-}
+// if (isFargate) {
+//   console.log('🧪 ARTILLERY_TEST_RUN_ID:', ARTILLERY_RUN_ID);
+//   console.log('📦 S3 Upload Prefix:', S3_RUN_PREFIX);
+// }
 
 /**
  * ------------------------------------------------------------
@@ -127,7 +127,7 @@ async function flushErrorLogToS3(localPath) {
       })
       .promise();
 
-    console.log(`✅ Error log flushed to s3://${S3_BUCKET}/${s3Key}`);
+    // console.log(`✅ Error log flushed to s3://${S3_BUCKET}/${s3Key}`);
   } catch (err) {
     console.error('❌ Failed to flush error log to S3:', err);
   }
@@ -149,7 +149,7 @@ async function flushErrorLogToS3(localPath) {
  * @param {Function} next - Continuation callback
  */
 function logError(request, response, context, ee, next) {
-  console.log(`🌐 Request URL: ${request.url}`);
+  // console.log(`🌐 Request URL: ${request.url}`);
 
   if (response.statusCode >= 200) {
     const logLine =
@@ -223,3 +223,4 @@ module.exports = {
   randomPost,
   logError
 };
+
