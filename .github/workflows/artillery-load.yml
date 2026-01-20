@@ -38,7 +38,6 @@ jobs:
       # 3️⃣ Install dependencies
       - name: Install dependencies
         run: |
-          npm install
           npm install -g artillery@2.0.21
 
       # 4️⃣ Assume Artillery Fargate Role (STS)
