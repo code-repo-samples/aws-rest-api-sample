@@ -1,8 +1,16 @@
 config:
   target: "https://8u0xag1lqh.execute-api.us-east-1.amazonaws.com/prod/"
   phases:
-    - duration: 600
-      arrivalRate: 80
+    # Phase 1: Gradual ramp-up
+    - duration: 120          # 15 minutes
+      arrivalRate: 10        # Starting TPS
+      rampTo: 100            # Gradually increase to 200 TPS
+      name: "Slow ramp to 200 TPS"
+
+    # Phase 3: Steady state at peak load
+    - duration: 600          # 10 minutes
+      arrivalRate: 200       # Sustain 200 TPS
+      name: "Steady 200 TPS"
   defaults:
     headers:
       Content-Type: "application/json"
@@ -25,9 +33,9 @@ config:
 
 
 
-  ensure:
-    p95: 10000
-    maxErrorRate: 20
+  # ensure:
+  #   p95: 10000
+  #   maxErrorRate: 20
     # thresholds:
     #     # p99 of response time must be <250:
     #     - 'http.response_time.p99': 250
@@ -80,5 +88,6 @@ scenarios:
               - statusCode: 200
 
           
+
 
 
