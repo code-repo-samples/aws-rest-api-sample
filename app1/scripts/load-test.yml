@@ -65,7 +65,7 @@ scenarios:
             - statusCode: 200
           afterResponse: 
             - "logError"
-            - "captureMetrics"
+            # - "captureMetrics"
           capture:
             json: "$"
             as: "response"
@@ -79,7 +79,7 @@ scenarios:
           url: "/test"
           afterResponse: 
             - "logError"
-            - "captureMetrics"
+            # - "captureMetrics"
           json:
             name: "{{ postData.name }}"
             address: "{{ postData.address }}"
@@ -88,6 +88,7 @@ scenarios:
               - statusCode: 200
 
           
+
 
 
 
