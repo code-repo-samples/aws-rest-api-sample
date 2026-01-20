@@ -29,28 +29,31 @@ jobs:
     runs-on: ubuntu-latest
 
     env:
-      # Local folder for reports/artifacts
       ARTIFACTS_DIR: reports
-      AWS_REGION: us-east-1
       ARTILLERY_OUTPUT_JSON: artillery_output.json
       ARTILLERY_HTML_REPORT_DIR: htmlreport
+      AWS_REGION: us-east-1  # Default region for AWS CLI
 
     steps:
 
       # 1️⃣ Checkout repo
       - name: Checkout repository
-        uses: actions/checkout@v4
+        uses: actions/checkout@v3
 
       # 2️⃣ Setup Node.js
       - name: Setup Node.js
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@v3
         with:
           node-version: 20
 
-      # 3️⃣ Install dependencies safely
+      # 3️⃣ Install dependencies
       - name: Install dependencies
         run: |
-          
+          if [ -f package-lock.json ]; then
+            npm ci
+          else
+            npm install
+          fi
           npm install -g artillery@2.0.21
 
       # 4️⃣ Verify app folder and script exist
@@ -71,13 +74,12 @@ jobs:
 
           echo "✅ App folder and script verified."
 
-      # 5️⃣ Assume Artillery Fargate Role (STS)
+      # 5️⃣ Assume AWS Role for Fargate
       - name: Generate temporary AWS credentials for Fargate
         id: sts
         env:
           AWS_ACCESS_KEY_ID: ${{ secrets.ARTILLERY_AWS_ACCESS_KEY_ID }}
           AWS_SECRET_ACCESS_KEY: ${{ secrets.ARTILLERY_AWS_SECRET_ACCESS_KEY }}
-          AWS_REGION: ${{ env.AWS_REGION }}
         run: |
           echo "Assuming role ${{ secrets.ARTILLERY_AWS_ROLE_ARN }}..."
           CREDS=$(aws sts assume-role \
@@ -98,9 +100,10 @@ jobs:
       - name: Create reports folder
         run: mkdir -p ${{ env.ARTIFACTS_DIR }}
 
-      # 7️⃣ Run Artillery Fargate
+      # 7️⃣ Run Artillery Fargate and capture logs
       - name: Run Artillery Fargate
         env:
+          # Pass app-specific AWS credentials and variables here
           APP_AWS_KEY: ${{ secrets.APP1_AWS_ACCESS_KEY }}
           APP_AWS_SECRET: ${{ secrets.APP1_AWS_SECRET_KEY }}
           APP_AWS_SESSION: ${{ secrets.APP1_AWS_SESSION_TOKEN }}
@@ -111,45 +114,65 @@ jobs:
           SCRIPT_FILE="${{ github.event.inputs.script-file }}"
           REPORTS_DIR="${{ env.ARTIFACTS_DIR }}"
           OUTPUT_JSON="$REPORTS_DIR/${{ env.ARTILLERY_OUTPUT_JSON }}"
+          ARTILLERY_LOG="$REPORTS_DIR/artillery_run.log"
 
+          mkdir -p "$REPORTS_DIR"
+
+          # Run artillery and capture stdout/stderr to log file
           artillery run-fargate "$APP_FOLDER/$SCRIPT_FILE" \
             --cpu "${{ github.event.inputs.cpu }}" \
             --memory "${{ github.event.inputs.memory }}" \
-            --count "${{ github.event.inputs.engines }}" \
-            --output "$OUTPUT_JSON"
+            --engines "${{ github.event.inputs.engines }}" \
+            --output "$OUTPUT_JSON" 2>&1 | tee "$ARTILLERY_LOG"
 
-      # 8️⃣ Generate HTML report (with .html)
+      # 8️⃣ Extract Artillery Run ID from logs (always)
+      - name: Extract Artillery Run ID
+        if: always()
+        run: |
+          REPORTS_DIR="${{ env.ARTIFACTS_DIR }}"
+          ARTILLERY_LOG="$REPORTS_DIR/artillery_run.log"
+
+          ARTILLERY_RUN_ID=$(grep -oP 'Test run completed: \K\S+' "$ARTILLERY_LOG")
+          if [ -n "$ARTILLERY_RUN_ID" ]; then
+            echo "ARTILLERY_RUN_ID=$ARTILLERY_RUN_ID" >> $GITHUB_ENV
+            echo "✅ Found run ID: $ARTILLERY_RUN_ID"
+          else
+            echo "❌ Could not find run ID in log. S3 download may fail."
+          fi
+
+      # 9️⃣ Generate HTML report (always)
       - name: Generate HTML report
+        if: always()
         run: |
           REPORTS_DIR="${{ env.ARTIFACTS_DIR }}"
           OUTPUT_JSON="$REPORTS_DIR/${{ env.ARTILLERY_OUTPUT_JSON }}"
           HTML_FILE="$REPORTS_DIR/${{ env.ARTILLERY_HTML_REPORT_DIR }}/report.html"
           mkdir -p "$(dirname "$HTML_FILE")"
 
-          artillery report "$OUTPUT_JSON" --output "$HTML_FILE"
+          if [ -f "$OUTPUT_JSON" ]; then
+            artillery report "$OUTPUT_JSON" --output "$HTML_FILE"
+          else
+            echo "Artillery output JSON not found, skipping HTML report."
+          fi
 
-      # 9️⃣ Download all S3 artifacts under this runId
+      # 🔟 Download all S3 artifacts (always)
       - name: Download S3 artifacts
         if: always()
-        env:
-          BUCKET_NAME: ${{ secrets.ARTILLERY_METRICS_BUCKET }}
         run: |
           REPORTS_DIR="${{ env.ARTIFACTS_DIR }}"
-          OUTPUT_JSON="$REPORTS_DIR/${{ env.ARTILLERY_OUTPUT_JSON }}"
-          ARTILLERY_RUN_ID=$(jq -r '.runId // empty' "$OUTPUT_JSON")
-
+          # Read ARTILLERY_RUN_ID from environment (set in previous step)
+          ARTILLERY_RUN_ID="$ARTILLERY_RUN_ID"
+      
           if [ -n "$ARTILLERY_RUN_ID" ]; then
-            echo "Downloading all artifacts from s3://$BUCKET_NAME/test-runs/$ARTILLERY_RUN_ID/"
+            echo "Downloading all artifacts from S3 run folder: $ARTILLERY_RUN_ID"
             mkdir -p "$REPORTS_DIR/$ARTILLERY_RUN_ID"
-
-            # Recursive copy ensures logs, jsonl, txt, and any other files
             aws s3 cp "s3://$BUCKET_NAME/test-runs/$ARTILLERY_RUN_ID/" \
               "$REPORTS_DIR/$ARTILLERY_RUN_ID/" --recursive --quiet
           else
             echo "Run ID not found; skipping S3 download."
           fi
 
-      # 🔟 Upload all reports as GitHub artifact (v4)
+      # 1️⃣1️⃣ Upload all reports/artifacts to GitHub (always)
       - name: Upload reports
         if: always()
         uses: actions/upload-artifact@v4
