@@ -115,7 +115,7 @@ jobs:
           artillery run-fargate "$APP_FOLDER/$SCRIPT_FILE" \
             --cpu "${{ github.event.inputs.cpu }}" \
             --memory "${{ github.event.inputs.memory }}" \
-            --engines "${{ github.event.inputs.engines }}" \
+            --count "${{ github.event.inputs.engines }}" \
             --output "$OUTPUT_JSON"
 
       # 8️⃣ Generate HTML report (with .html)
