@@ -11,13 +11,25 @@ on:
         description: 'Artillery script to run (relative to app folder)'
         required: true
         default: 'scripts/load-test.yml'
+      cpu:
+        description: 'CPU units per Fargate task'
+        required: false
+        default: '4096'
+      memory:
+        description: 'Memory (MB) per Fargate task'
+        required: false
+        default: '8192'
+      engines:
+        description: 'Number of parallel Fargate engines/tasks'
+        required: false
+        default: '1'
 
 jobs:
   run-artillery:
     runs-on: ubuntu-latest
 
     env:
-      # Local folder for reports and artifacts
+      # Local folder for reports/artifacts
       ARTIFACTS_DIR: reports
       AWS_REGION: us-east-1
       ARTILLERY_OUTPUT_JSON: artillery_output.json
@@ -39,11 +51,9 @@ jobs:
       - name: Install dependencies
         run: |
           
-
-          # Install Artillery CLI globally
           npm install -g artillery@2.0.21
 
-      # 4️⃣ Verify app folder and script existence
+      # 4️⃣ Verify app folder and script exist
       - name: Verify app folder and script
         run: |
           APP_FOLDER="${{ github.event.inputs.app-folder }}"
@@ -84,11 +94,11 @@ jobs:
           echo "AWS_SECRET_ACCESS_KEY=$AWS_SECRET_ACCESS_KEY" >> $GITHUB_ENV
           echo "AWS_SESSION_TOKEN=$AWS_SESSION_TOKEN" >> $GITHUB_ENV
 
-      # 6️⃣ Create reports folder
+      # 6️⃣ Create local reports folder
       - name: Create reports folder
         run: mkdir -p ${{ env.ARTIFACTS_DIR }}
 
-      # 7️⃣ Run Artillery Fargate with app-specific credentials and variables
+      # 7️⃣ Run Artillery Fargate
       - name: Run Artillery Fargate
         env:
           APP_AWS_KEY: ${{ secrets.APP1_AWS_ACCESS_KEY }}
@@ -102,39 +112,43 @@ jobs:
           REPORTS_DIR="${{ env.ARTIFACTS_DIR }}"
           OUTPUT_JSON="$REPORTS_DIR/${{ env.ARTILLERY_OUTPUT_JSON }}"
 
-          echo "Running Artillery script: $APP_FOLDER/$SCRIPT_FILE"
           artillery run-fargate "$APP_FOLDER/$SCRIPT_FILE" \
+            --cpu "${{ github.event.inputs.cpu }}" \
+            --memory "${{ github.event.inputs.memory }}" \
+            --engines "${{ github.event.inputs.engines }}" \
             --output "$OUTPUT_JSON"
 
-      # 8️⃣ Generate HTML report
+      # 8️⃣ Generate HTML report (with .html)
       - name: Generate HTML report
         run: |
           REPORTS_DIR="${{ env.ARTIFACTS_DIR }}"
           OUTPUT_JSON="$REPORTS_DIR/${{ env.ARTILLERY_OUTPUT_JSON }}"
-          HTML_DIR="$REPORTS_DIR/${{ env.ARTILLERY_HTML_REPORT_DIR }}"
+          HTML_FILE="$REPORTS_DIR/${{ env.ARTILLERY_HTML_REPORT_DIR }}/report.html"
+          mkdir -p "$(dirname "$HTML_FILE")"
 
-          artillery report "$OUTPUT_JSON" --output "$HTML_DIR"
+          artillery report "$OUTPUT_JSON" --output "$HTML_FILE"
 
-      # 9️⃣ Download S3 artifacts (per runId)
+      # 9️⃣ Download all S3 artifacts under this runId
       - name: Download S3 artifacts
         env:
           BUCKET_NAME: ${{ secrets.ARTILLERY_METRICS_BUCKET }}
         run: |
           REPORTS_DIR="${{ env.ARTIFACTS_DIR }}"
           OUTPUT_JSON="$REPORTS_DIR/${{ env.ARTILLERY_OUTPUT_JSON }}"
-
           ARTILLERY_RUN_ID=$(jq -r '.runId // empty' "$OUTPUT_JSON")
 
           if [ -n "$ARTILLERY_RUN_ID" ]; then
-            echo "Downloading S3 artifacts from s3://$BUCKET_NAME/test-runs/$ARTILLERY_RUN_ID/"
+            echo "Downloading all artifacts from s3://$BUCKET_NAME/test-runs/$ARTILLERY_RUN_ID/"
             mkdir -p "$REPORTS_DIR/$ARTILLERY_RUN_ID"
+
+            # Recursive copy ensures logs, jsonl, txt, and any other files
             aws s3 cp "s3://$BUCKET_NAME/test-runs/$ARTILLERY_RUN_ID/" \
-              "$REPORTS_DIR/$ARTILLERY_RUN_ID/" --recursive
+              "$REPORTS_DIR/$ARTILLERY_RUN_ID/" --recursive --quiet
           else
             echo "Run ID not found; skipping S3 download."
           fi
 
-      # 🔟 Upload all reports as GitHub artifact
+      # 🔟 Upload all reports as GitHub artifact (v4)
       - name: Upload reports
         uses: actions/upload-artifact@v4
         with:
