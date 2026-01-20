@@ -63,8 +63,8 @@ scenarios:
           url: "/test?name={{ name }}&address={{ address }}"
           expect:
             - statusCode: 200
-          afterResponse: 
-            - "logError"
+          # afterResponse: 
+          #   - "logError"
             # - "captureMetrics"
           capture:
             json: "$"
@@ -77,8 +77,8 @@ scenarios:
       - post:
           name: "POST_Test"
           url: "/test"
-          afterResponse: 
-            - "logError"
+          # afterResponse: 
+          #   - "logError"
             # - "captureMetrics"
           json:
             name: "{{ postData.name }}"
@@ -88,6 +88,7 @@ scenarios:
               - statusCode: 200
 
           
+
 
 
 
