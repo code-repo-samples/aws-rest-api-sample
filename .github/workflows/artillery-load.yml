@@ -151,18 +151,23 @@ jobs:
           fi
 
       # 🔟 Download all S3 artifacts (always)
-      - name: Download S3 artifacts
+      - name: Download all S3 artifacts
         if: always()
+        env:
+          BUCKET_NAME: ${{ secrets.ARTILLERY_METRICS_BUCKET }}
         run: |
           REPORTS_DIR="${{ env.ARTIFACTS_DIR }}"
-          # Read ARTILLERY_RUN_ID from environment (set in previous step)
           ARTILLERY_RUN_ID="$ARTILLERY_RUN_ID"
       
           if [ -n "$ARTILLERY_RUN_ID" ]; then
-            echo "Downloading all artifacts from S3 run folder: $ARTILLERY_RUN_ID"
+            echo "Downloading all artifacts from s3://$BUCKET_NAME/test-runs/$ARTILLERY_RUN_ID/"
             mkdir -p "$REPORTS_DIR/$ARTILLERY_RUN_ID"
-            aws s3 cp "s3://$BUCKET_NAME/test-runs/$ARTILLERY_RUN_ID/" \
-              "$REPORTS_DIR/$ARTILLERY_RUN_ID/" --recursive --quiet
+      
+            # Use sync instead of cp for full coverage
+            aws s3 sync "s3://$BUCKET_NAME/test-runs/$ARTILLERY_RUN_ID/" \
+              "$REPORTS_DIR/$ARTILLERY_RUN_ID/" --quiet
+      
+            echo "✅ All S3 artifacts downloaded."
           else
             echo "Run ID not found; skipping S3 download."
           fi
