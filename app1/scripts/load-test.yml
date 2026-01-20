@@ -66,10 +66,10 @@ scenarios:
           # afterResponse: 
           #   - "logError"
             # - "captureMetrics"
-          capture:
-            json: "$"
-            as: "response"
-          log : "{{response}}"
+          # capture:
+          #   json: "$"
+          #   as: "response"
+          # log : "{{response}}"
       
       # POST request with random body
       - function: "randomPost"
@@ -88,6 +88,7 @@ scenarios:
               - statusCode: 200
 
           
+
 
 
 
