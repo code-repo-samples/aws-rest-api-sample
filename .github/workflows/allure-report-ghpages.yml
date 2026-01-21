@@ -20,8 +20,8 @@ jobs:
           node-version: '20'
 
       # 3. Install Node.js dependencies
-      - name: Install Node.js dependencies
-        run: npm install
+      # - name: Install Node.js dependencies
+      #   run: npm install
 
       # 4. Install Allure CLI
       - name: Install Allure CLI
