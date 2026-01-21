@@ -43,46 +43,48 @@ jobs:
       - name: Generate Allure results
         run: node report_allure.js --html report_20m.html --p90sla ${{ github.event.inputs.p90_sla }} --slaConfig
 
-      # 6. Merge previous results (optional cumulative)
+      # 6. Merge previous Allure results for cumulative report
       - name: Merge previous Allure results
         run: |
           mkdir -p allure-results
-          # Pull previous results from reports branch
           git fetch origin reports
-          git checkout reports -- reports/allure-results || echo "No previous results"
-          cp -r reports/allure-results/* allure-results/ 2>/dev/null || echo "No previous results"
+          git checkout reports || git checkout -b reports
+          if [ -d reports/allure-results ]; then
+            cp -r reports/allure-results/* allure-results/
+          fi
           cp -r allure-results-new/* allure-results/ || echo "No new results"
 
       # 7. Generate cumulative Allure report
       - name: Generate cumulative Allure report
         run: allure generate allure-results
 
-      # 8. Copy reports into versioned folder
-      - name: Copy reports to repo folder
+      # 8. Copy cumulative report and custom HTML into reports branch folder
+      - name: Prepare reports folder
         run: |
-          RUN_FOLDER=reports/run-${GITHUB_RUN_NUMBER}
-          mkdir -p $RUN_FOLDER
-          cp -r allure-report/* $RUN_FOLDER/
-          cp report_20m.html $RUN_FOLDER/
+          mkdir -p reports/allure-report
+          cp -r allure-report/* reports/allure-report/
+          cp report_20m.html reports/allure-report/
 
-      # 9. Update index.html for easy navigation
-      - name: Update reports index
+      # 9. Update index.html to link cumulative report
+      - name: Update index.html
         run: |
-          echo "<h1>Allure Reports</h1>" > reports/index.html
-          for f in reports/run-* ; do
-            if [ -d "$f" ]; then
-              echo "<a href='$f/index.html'>$(basename $f)</a><br>" >> reports/index.html
-            fi
-          done
+          echo "<h1>Allure Cumulative Report</h1>" > reports/index.html
+          echo "<a href='allure-report/index.html'>View Latest Report</a><br>" >> reports/index.html
 
-      # 10. Commit and push reports to reports branch
+      # 10. Commit and safely push to reports branch
       - name: Commit and push reports
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
+
           git add reports/
-          git commit -m "Add Allure report for run #${GITHUB_RUN_NUMBER}" || echo "No changes to commit"
-          git push origin HEAD:reports
+          git commit -m "Update cumulative Allure report (run #${GITHUB_RUN_NUMBER})" || echo "No changes to commit"
+
+          # Fetch remote and merge to prevent non-fast-forward
+          git fetch origin reports
+          git merge origin/reports --allow-unrelated-histories -m "Merge remote reports branch"
+
+          git push origin reports
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
