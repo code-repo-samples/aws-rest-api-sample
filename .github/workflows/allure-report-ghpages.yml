@@ -76,15 +76,14 @@ jobs:
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
-
+      
+          git fetch origin reports
+          git checkout reports || git checkout -b reports
+          git reset --hard origin/reports  # Align with remote to avoid conflicts
+      
           git add reports/
           git commit -m "Update cumulative Allure report (run #${GITHUB_RUN_NUMBER})" || echo "No changes to commit"
-
-          # Fetch remote and merge to prevent non-fast-forward
-          git fetch origin reports
-          git merge origin/reports --allow-unrelated-histories -m "Merge remote reports branch"
-
-          git push origin reports
+          git push origin reports --force  # Force push to overwrite index.html and report folder
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
