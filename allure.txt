@@ -1,0 +1,159 @@
+const fs = require('fs');
+const path = require('path');
+const cheerio = require('cheerio');
+const { v4: uuidv4 } = require('uuid');
+const mime = require('mime-types');
+const yargs = require('yargs/yargs');
+const { hideBin } = require('yargs/helpers');
+
+// --- Configuration ---
+const outputDir = './allure-results';
+
+const argv = yargs(hideBin(process.argv))
+    .option('html', { alias: 'f', type: 'string', default: 'report.html' })
+    .option('appName', { alias: 'a', type: 'string', default: 'Logout-API' })
+    .option('runId', { alias: 'r', type: 'string', default: 'Build-11001' })
+    .option('p90sla', { type: 'number', default: 150 }) 
+    .option('slaConfig', { type: 'string', description: 'Path to sla.conf JSON' })
+    .help().argv;
+
+if (!fs.existsSync(outputDir)) fs.mkdirSync(outputDir, { recursive: true });
+
+// --- 1. Load SLA Configuration (Priority: File > Command Line) ---
+let customSlas = {};
+if (argv.slaConfig && fs.existsSync(argv.slaConfig)) {
+    customSlas = JSON.parse(fs.readFileSync(argv.slaConfig, 'utf8'));
+}
+
+function getSlaForTrx(name) {
+    // Returns { p90: num, minPass: num }
+    return {
+        p90: customSlas[name]?.p90 || argv.p90sla,
+        minPass: customSlas[name]?.minPassCount || 1
+    };
+}
+
+// --- 2. Professional Metric Formatter ---
+function formatOverallMetrics(appName, runId, stats) {
+    const headerStyle = `background-color: #eef2f5; font-weight: 700; padding: 10px; border: 1px solid #ddd;`;
+    const keyStyle = `padding: 8px; border: 1px solid #ddd; color: #555; width: 25%;`;
+    const valStyle = `padding: 8px; border: 1px solid #ddd; font-weight: 700; width: 25%;`;
+
+    return `
+    <h3>Overall Performance Metrics</h3>
+    <table style="width:100%; border-collapse: collapse; font-family: sans-serif; font-size: 14px;">
+        <tr><td colspan="4" style="${headerStyle}">General Information</td></tr>
+        <tr>
+            <td style="${keyStyle}">Application</td><td style="${valStyle}">${appName}</td>
+            <td style="${keyStyle}">Run ID</td><td style="${valStyle}">${runId}</td>
+        </tr>
+        <tr>
+            <td style="${keyStyle}">Duration</td><td style="${valStyle}">${stats.duration}s</td>
+            <td style="${keyStyle}">Pass Rate</td><td style="${valStyle}">${stats.passRate}%</td>
+        </tr>
+    </table>`;
+}
+
+try {
+    const htmlContent = fs.readFileSync(argv.html, 'utf8');
+    const $ = cheerio.load(htmlContent);
+
+    const stats = {
+        duration: $('b:contains("Duration")').parent().contents().last().text().trim(),
+        passRate: $('b:contains("Pass %")').parent().contents().last().text().trim() || "0"
+    };
+
+    const metrics = [];
+    $('h5:contains("API Summary")').next('table').find('tbody tr').each((i, el) => {
+        const cols = $(el).find('td');
+        const name = $(cols[0]).text().trim();
+        const sla = getSlaForTrx(name); // Get 150 or conf value
+
+        const m = {
+            trxName: name,
+            p50: $(cols[2]).text().trim(),
+            p90: parseFloat($(cols[5]).text().trim()),
+            pass: parseInt($(cols[10]).text().trim()),
+            fail: parseInt($(cols[11]).text().trim()),
+            p90Limit: sla.p90,
+            passLimit: sla.minPass
+        };
+
+        m.status = (m.p90 <= m.p90Limit && m.pass >= m.passLimit && m.fail === 0) ? 'passed' : 'failed';
+        metrics.push(m);
+    });
+
+    const attachmentHash = uuidv4();
+    const attachmentSource = `${attachmentHash}-dashboard.html`;
+    fs.copyFileSync(argv.html, path.join(outputDir, attachmentSource));
+
+    const results = [];
+
+    // --- SUMMARY TEST CASE ---
+    results.push({
+        uuid: uuidv4(),
+        name: `Overall Execution Summary`,
+        status: "passed", 
+        descriptionHtml: formatOverallMetrics(argv.appName, argv.runId, stats),
+        attachments: [{ name: "Full Performance Dashboard (HTML)", type: "text/html", source: attachmentSource }],
+        labels: [
+            { name: "parentSuite", value: argv.appName },
+            { name: "suite", value: argv.runId },
+            { name: "subSuite", value: "Execution Summary" }
+        ],
+        start: Date.now(), stop: Date.now() + 100
+    });
+
+    // --- TRANSACTION TEST CASES ---
+    metrics.forEach(m => {
+        results.push({
+            uuid: uuidv4(),
+            // FIXED: Using m.p90Limit (150) instead of a hardcoded value
+            name: `${m.trxName} [P90 SLA: ${m.p90Limit}ms | Actual: ${m.p90}ms | Pass: ${m.pass}]`,
+            status: m.status,
+            labels: [
+                { name: "parentSuite", value: argv.appName },
+                { name: "suite", value: argv.runId },
+                { name: "subSuite", value: "Transactions" },
+                { name: "P90 Actual", value: `${m.p90}ms` },
+                { name: "P90 SLA", value: `${m.p90Limit}ms` }, // This will show 150
+                { name: "Pass Count", value: m.pass.toString() }
+            ],
+            steps: [
+                { 
+                    name: `Verify P90: ${m.p90}ms <= SLA: ${m.p90Limit}ms`, 
+                    status: m.p90 <= m.p90Limit ? 'passed' : 'failed' 
+                },
+                { 
+                    name: `Verify Pass Count: ${m.pass} >= Min: ${m.passLimit}`, 
+                    status: m.pass >= m.passLimit ? 'passed' : 'failed' 
+                }
+            ],
+            // Synthetic duration set to 100ms just for the report UI
+            start: Date.now(), stop: Date.now() + 100 
+        });
+    });
+
+    results.forEach(res => fs.writeFileSync(path.join(outputDir, `${res.uuid}-result.json`), JSON.stringify(res, null, 2)));
+    
+    fs.writeFileSync(path.join(outputDir, 'executor.json'), JSON.stringify({
+        name: "K6-Parser",
+        buildName: `${argv.appName} (${argv.runId})`
+    }, null, 2));
+
+    console.log(`✅ Success! SLA set to ${argv.p90sla}ms. Reports generated.`);
+
+} catch (err) {
+    console.error(`❌ Error: ${err.message}`);
+}
+
+
+//sla.conf
+
+// {
+//   "01_Home_Page": { "p90": 150, "minPassCount": 200 },
+//   "02_Get_Pizza": { "p90": 300, "minPassCount": 100 }
+// }
+
+
+//node report_allure.js --html report.html --p90sla 150 --slaConfig sla.conf
