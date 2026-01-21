@@ -27,7 +27,7 @@ jobs:
       - name: Install Allure CLI
         run: |
           npm install -g allure
-          npm install cheerio uuid allure-js-commons mime-types yargs
+          npm install cheerio uuid allure-js-commons mime-types yargs csv-parse
 
       # 5. Generate HTML report from CSV
       - name: Generate HTML report from CSV
