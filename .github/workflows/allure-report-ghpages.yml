@@ -1,0 +1,50 @@
+name: Deploy Allure Report to GitHub Pages
+
+# Manual trigger
+on:
+  workflow_dispatch:
+
+jobs:
+  deploy-allure:
+    runs-on: ubuntu-latest
+
+    steps:
+      # 1. Checkout repo
+      - name: Checkout repository
+        uses: actions/checkout@v3
+
+      # 2. Set up Node.js
+      - name: Set up Node.js
+        uses: actions/setup-node@v3
+        with:
+          node-version: '20'
+
+      # 3. Install Node.js dependencies
+      - name: Install Node.js dependencies
+        run: npm install
+
+      # 4. Install Allure CLI
+      - name: Install Allure CLI
+        run: npm install -g allure-commandline@3.0.1
+
+      # 5. Generate HTML report from CSV
+      - name: Generate HTML report from CSV
+        run: node reportgenerator.js results.csv report_20m.html
+
+      # 6. Apply SLA and transformations
+      - name: Apply Allure transformations
+        run: node report_allure.js --html report_20m.html --p90sla 1500 --slaConfig
+
+      # 7. Generate static Allure report
+      - name: Generate Allure Report
+        run: |
+          mkdir -p allure-results
+          cp -r reports/* allure-results/
+          allure generate allure-results --clean -o allure-report
+
+      # 8. Deploy to GitHub Pages
+      - name: Deploy to GitHub Pages
+        uses: peaceiris/actions-gh-pages@v6
+        with:
+          github_token: ${{ secrets.GITHUB_TOKEN }}
+          publish_dir: ./allure-report
