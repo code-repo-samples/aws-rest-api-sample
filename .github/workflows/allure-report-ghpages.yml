@@ -1,52 +1,62 @@
-name: Deploy Allure Report to GitHub Pages
+name: Allure Report Workflow
 
-# Manual trigger
 on:
   workflow_dispatch:
+    inputs:
+      csv_file:
+        description: 'CSV file for report'
+        required: true
+        default: 'results.csv'
+      p90_sla:
+        description: 'P90 SLA threshold'
+        required: true
+        default: 1500
 
 jobs:
-  deploy-allure:
+  generate-and-deploy:
     runs-on: ubuntu-latest
 
     steps:
-      # 1. Checkout repo
+      # Step 1: Checkout the repo
       - name: Checkout repository
         uses: actions/checkout@v3
 
-      # 2. Set up Node.js
+      # Step 2: Set up Node.js
       - name: Set up Node.js
         uses: actions/setup-node@v3
         with:
           node-version: '20'
 
-      # 3. Install Node.js dependencies
-      # - name: Install Node.js dependencies
-      #   run: npm install
-
-      # 4. Install Allure CLI
+      # Step 3: Install Allure CLI
       - name: Install Allure CLI
         run: |
           npm install -g allure
+          # Install any Node.js dependencies required by your scripts
           npm install cheerio uuid allure-js-commons mime-types yargs csv-parse
+        
 
-      # 5. Generate HTML report from CSV
-      - name: Generate HTML report from CSV
-        run: node reportgenerator.js results.csv report_20m.html
+      # Step 4: Generate HTML report from CSV
+      - name: Generate custom HTML report
+        run: node reportgenerator.js ${{ github.event.inputs.csv_file }} report_20m.html
 
-      # 6. Apply SLA and transformations
-      - name: Apply Allure transformations
-        run: node report_allure.js --html report_20m.html --p90sla 1500 --slaConfig
+      # Step 5: Apply SLA and generate Allure results
+      - name: Generate Allure results
+        run: node report_allure.js --html report_20m.html --p90sla ${{ github.event.inputs.p90_sla }} --slaConfig
 
-      # 7. Generate static Allure report
-      - name: Generate Allure Report
-        run: |
-          # Folder already created by report_allure.js
-          # mkdir -p allure-results  # optional, already exists
-          # cp -r reports/* allure-results/  # remove this line
-          # Generate static HTML report
-          allure generate allure-results --clean -o allure-report
+      # Step 6: Generate static Allure report
+      - name: Generate static Allure report
+        run: allure generate allure-results --clean -o allure-report
 
-      # 8. Deploy to GitHub Pages
+      # Step 7: Upload reports as GitHub artifacts
+      - name: Upload reports
+        uses: actions/upload-artifact@v3
+        with:
+          name: test-reports
+          path: |
+            report_20m.html
+            allure-report/
+
+      # Step 8 (Optional): Deploy to GitHub Pages
       - name: Deploy to GitHub Pages
         uses: peaceiris/actions-gh-pages@v4
         with:
