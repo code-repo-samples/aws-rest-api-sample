@@ -43,28 +43,28 @@ jobs:
       - name: Generate Allure results
         run: node report_allure.js --html report_20m.html --p90sla ${{ github.event.inputs.p90_sla }} --slaConfig
 
-      # 6️⃣ Fetch and merge previous Allure results
+      # 6️⃣ Fetch and merge previous Allure results safely
       - name: Merge previous Allure results
         run: |
           mkdir -p allure-results
 
-          # Fetch remote reports branch
+          # Checkout reports branch safely
           git fetch origin reports
-          git checkout reports || git checkout -b reports
+          git checkout origin/reports -B reports
           git reset --hard origin/reports
 
-          # Merge previous results if they exist
+          # Merge previous allure-results using rsync to avoid 'same file' errors
           if [ -d reports/allure-results ]; then
-            cp -r reports/allure-results/* allure-results/
+            rsync -a --ignore-existing reports/allure-results/ allure-results/
           fi
 
-          # Copy current run results (replace with your actual output folder)
-          cp -r allure-results/* allure-results/
+          # Merge current run results
+          rsync -a allure-results/ allure-results/  # adjust if your Node script outputs to a different folder
 
-      # 7️⃣ Generate cumulative report (Allure 3)
+      # 7️⃣ Generate cumulative Allure report (Allure 3)
       - name: Generate cumulative Allure report
         run: |
-          rm -rf allure-report                 # Allure 3 requires manual clean
+          rm -rf allure-report
           allure generate allure-results -o allure-report
 
       # 8️⃣ Copy cumulative report and custom HTML into reports folder
