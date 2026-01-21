@@ -1,0 +1,407 @@
+#!/usr/bin/env node
+/**
+ * k6 CSV → FULL Interactive HTML Dashboard (Node.js-safe)
+ */
+
+const fs = require("fs");
+const { parse } = require("csv-parse/sync");
+
+/* ================= CLI ================= */
+const [, , csvFile, outFile, ...args] = process.argv;
+if (!csvFile || !outFile) {
+  console.error("Usage: node report.js metrics.csv report.html [--sla sla.json]");
+  process.exit(1);
+}
+
+let sla = null;
+const slaIdx = args.indexOf("--sla");
+if (slaIdx !== -1) sla = JSON.parse(fs.readFileSync(args[slaIdx + 1], "utf8"));
+
+/* ================= CSV ================= */
+const rows = parse(fs.readFileSync(csvFile, "utf8"), {
+  columns: true,
+  skip_empty_lines: true
+});
+
+/* ================= DATA MODELS ================= */
+const apis = {};
+const timeline = {};
+const errorsGlobal = {};
+let start = Infinity, end = 0;
+let total = 0, pass = 0, fail = 0;
+
+/* ================= HELPERS ================= */
+const pct = (arr, p) => {
+  if (!arr.length) return 0;
+  const s = [...arr].sort((a, b) => a - b);
+  return s[Math.floor((p / 100) * s.length)];
+};
+
+const normalizeName = (name) => name ? name.replace(/\/$/, "") : "";
+const cleanGroup = (group) => group ? group.replace(/^::/, "") : "";
+const getKey = (r) => cleanGroup(r.group) || normalizeName(r.name);
+const getDisplayName = (r) => cleanGroup(r.group) || r.name;
+
+const ensureApi = (r) => {
+  const key = getKey(r);
+  return apis[key] ||= {
+    key,
+    displayName: getDisplayName(r),
+    durations: [],
+    perSecond: {},
+    perSecondRT: {},
+    status: {},
+    pass: 0,
+    fail: 0
+  };
+};
+
+/* ================= INGEST ================= */
+for (const r of rows) {
+  const ts = Number(r.timestamp);
+  start = Math.min(start, ts);
+  end = Math.max(end, ts);
+  timeline[ts] ||= {};
+
+  const api = ensureApi(r);
+
+  if (r.metric_name === "http_reqs") {
+    total++;
+    api.perSecond[ts] = (api.perSecond[ts] || 0) + 1;
+  }
+
+  if (r.metric_name === "http_req_duration") {
+    const v = Number(r.metric_value);
+    api.durations.push(v);
+    (api.perSecondRT[ts] ||= []).push(v);
+  }
+
+  if (r.metric_name === "http_req_failed") {
+    if (Number(r.metric_value) === 1) {
+      api.fail++;
+      fail++;
+      const c = r.status || "unknown";
+      api.status[c] = (api.status[c] || 0) + 1;
+      errorsGlobal[api.key + "|" + r.name + "|" + c] = (errorsGlobal[api.key + "|" + r.name + "|" + c] || 0) + 1;
+    } else {
+      api.pass++;
+      pass++;
+    }
+  }
+}
+
+/* ================= DERIVED ================= */
+const seconds = [];
+for (let i = start; i <= end; i++) seconds.push(i);
+
+// Only APIs with transactions
+const activeApis = Object.values(apis).filter(a => (a.pass + a.fail) > 0);
+
+// Summary table
+const apiSummary = activeApis.map(a => {
+  const totalCount = a.pass + a.fail;
+  const avg = a.durations.reduce((x, y) => x + y, 0) / (a.durations.length || 1);
+  const min = Math.min(...a.durations, 0);
+  const max = Math.max(...a.durations, 0);
+  const p90 = pct(a.durations, 90);
+  const p95 = pct(a.durations, 95);
+  const p99 = pct(a.durations, 99);
+
+  let slaValue = "N/A";
+  let slaReason = "No SLA";
+  if (sla?.[a.key]) {
+    slaValue = sla[a.key].p90 || "N/A";
+    if (p90 > sla[a.key].p90) slaReason = "P90 breach";
+    else if (a.pass < sla[a.key].min_pass) slaReason = "Throughput breach";
+    else slaReason = "OK";
+  }
+
+  return {
+    key: a.key,
+    displayName: a.displayName,
+    sla: slaValue,
+    avg, min, max, p90, p95, p99,
+    expectedTPH: sla?.[a.key]?.min_pass || "N/A",
+    total: totalCount,
+    pass: a.pass,
+    fail: a.fail,
+    slaResult: { status: slaReason === "OK" ? "PASS" : slaReason === "No SLA" ? "N/A" : "FAIL", reason: slaReason }
+  };
+});
+
+// Error table
+const errorTable = Object.entries(errorsGlobal).map(([key, count]) => {
+  const [groupKey, endpoint, status] = key.split("|");
+  const display = groupKey || endpoint;
+  const proportion = ((count / total) * 100).toFixed(2);
+  return { display, status, count, proportion };
+});
+
+// Accordion HTML
+const accordionHtml = activeApis.map((a,i)=>`
+<div class="accordion-item">
+<h2 class="accordion-header">
+<button class="accordion-button collapsed" data-bs-toggle="collapse" data-bs-target="#api${i}">
+${a.displayName} — Total ${a.pass + a.fail} — Pass ${((a.pass/(a.pass+a.fail))*100).toFixed(1)}%
+</button>
+</h2>
+<div id="api${i}" class="accordion-collapse collapse">
+<div class="accordion-body">
+<div class="row">
+<div class="col-md-6"><div id="rt_${i}"></div></div>
+<div class="col-md-6"><div id="rps_${i}"></div></div>
+</div>
+<div class="row mt-3">
+<div class="col-md-6"><div id="status_${i}"></div></div>
+<div class="col-md-6"><div id="err_${i}"></div></div>
+</div>
+</div>
+</div>
+</div>`).join("");
+
+// ================= HTML =================
+const html = `
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8"/>
+<title>k6 Performance Report</title>
+<link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" rel="stylesheet">
+<script src="https://cdn.plot.ly/plotly-latest.min.js"></script>
+<style>
+body {background:#f5f6f8;padding:20px;}
+.card {border-radius:12px;margin-bottom:16px;border:1px solid #ddd;box-shadow:2px 2px 6px rgba(0,0,0,0.05);}
+.table-bordered th, .table-bordered td {border:1px solid #ccc !important;}
+</style>
+</head>
+<body>
+<div class="container-fluid">
+<h3>🚀 Performance Report</h3>
+
+<!-- KPI CARDS -->
+<div class="row">
+${[
+  ["Start", new Date(start * 1000).toISOString()],
+  ["End", new Date(end * 1000).toISOString()],
+  ["Duration (s)", end - start],
+  ["Total Tx", total],
+  ["Pass %", ((pass / total) * 100).toFixed(2)]
+].map(k => `
+<div class="col-md-2">
+<div class="card"><div class="card-body"><b>` + k[0] + `</b><br>` + k[1] + `</div></div>
+</div>`).join("")}
+</div>
+
+<!-- SUMMARY TABLE -->
+<div class="card"><div class="card-body">
+<h5>📄 API Summary</h5>
+<table class="table table-sm table-bordered table-striped">
+<thead class="table-dark"><tr>
+<th>Transaction</th><th>SLA(ms)</th><th>Avg (ms)</th><th>Min (ms)</th><th>Max (ms)</th>
+<th>P90</th><th>P95</th><th>P99(ms)</th><th>Expected_TPH</th>
+<th>Count</th><th>Pass_Count</th><th>Fail_Count</th>
+</tr></thead>
+<tbody>
+${apiSummary.map(a=>`
+<tr>
+<td>` + a.displayName + `</td>
+<td>` + a.sla + `</td>
+<td>` + a.avg.toFixed(1) + `</td>
+<td>` + a.min.toFixed(1) + `</td>
+<td>` + a.max.toFixed(1) + `</td>
+<td>` + a.p90.toFixed(1) + `</td>
+<td>` + a.p95.toFixed(1) + `</td>
+<td>` + a.p99.toFixed(1) + `</td>
+<td>` + a.expectedTPH + `</td>
+<td>` + a.total + `</td>
+<td>` + a.pass + `</td>
+<td>` + a.fail + `</td>
+</tr>`).join("")}
+</tbody>
+</table>
+</div></div>
+
+<!-- ERROR + DONUT ROW -->
+<div class="row">
+<div class="col-md-6">
+<div class="card"><div class="card-body">
+<h5>⚠️ Error Details</h5>
+<table class="table table-sm table-bordered table-striped">
+<thead class="table-danger"><tr>
+<th>Group / Endpoint</th><th>Status Code</th><th>Count</th><th>Proportion (%)</th>
+</tr></thead>
+<tbody>
+${errorTable.map(e=>`
+<tr>
+<td>` + e.display + `</td>
+<td>` + e.status + `</td>
+<td>` + e.count + `</td>
+<td>` + e.proportion + `</td>
+</tr>`).join("")}
+</tbody>
+</table>
+</div></div>
+</div>
+
+<div class="col-md-6">
+<div class="card"><div class="card-body">
+<h5>📊 Error Distribution</h5>
+<div id="errDonut"></div>
+</div></div>
+</div>
+</div>
+
+<!-- GLOBAL CHARTS -->
+<div class="row">
+<div class="col-md-6">
+<div class="card"><div class="card-body">
+<h5>📈 Global RPS per API</h5>
+<div id="globalRps"></div>
+</div></div>
+</div>
+<div class="col-md-6">
+<div class="card"><div class="card-body">
+<h5>⏱ Response Time per API</h5>
+<label><input type="radio" name="rtMetric" checked value="avg" onchange="updateRtChart()"> Avg</label>
+<label><input type="radio" name="rtMetric" value="p90" onchange="updateRtChart()"> P90</label>
+<label><input type="radio" name="rtMetric" value="p95" onchange="updateRtChart()"> P95</label>
+<label><input type="radio" name="rtMetric" value="p99" onchange="updateRtChart()"> P99</label>
+<div id="globalRt"></div>
+</div></div>
+</div>
+
+<!-- DUAL AXIS -->
+<div class="card"><div class="card-body">
+<h5>📊 RPS vs Latency</h5>
+<label><input type="radio" name="lat" checked onclick="renderDual('avg')"> Avg</label>
+<label><input type="radio" name="lat" onclick="renderDual('p90')"> P90</label>
+<label><input type="radio" name="lat" onclick="renderDual('p95')"> P95</label>
+<div id="dual"></div>
+</div></div>
+
+<!-- ACCORDION -->
+<div class="accordion" id="acc">
+` + accordionHtml + `
+</div>
+
+</div>
+
+<script>
+const apis = ` + JSON.stringify(activeApis) + `;
+const seconds = ` + JSON.stringify(seconds) + `;
+const start = ` + start + `;
+
+/* ================= ERROR DONUT ================= */
+Plotly.newPlot("errDonut", [{
+  values: ` + JSON.stringify(errorTable.map(e=>e.count)) + `,
+  labels: ` + JSON.stringify(errorTable.map(e=>e.display)) + `,
+  hole: 0.7,
+  type: "pie",
+  textinfo: "none",
+  hoverinfo: "label+percent+value"
+}], {
+  height: 350,
+  width: 500,
+  legend: {orientation:"v", x:1.05, y:0.5}
+});
+
+/* ================= GLOBAL RPS ================= */
+Plotly.newPlot("globalRps", apis.map(a=>({
+  x: seconds.map(s=>s-start),
+  y: seconds.map(s=>a.perSecond[s]||0),
+  name: a.displayName,
+  mode: "lines+markers",
+  line: {width:2}
+})), {title:"RPS per API", xaxis:{title:"Time (s)"}, yaxis:{title:"Requests per Second"}, height:300, legend:{orientation:"h"}});
+
+/* ================= RESPONSE TIME CHART ================= */
+function getMetricValue(v, metric) {
+  if (!v.length) return 0;
+  if (metric === "avg") return v.reduce((x,y)=>x+y,0)/v.length;
+  if (metric === "p90") return v.sort((a,b)=>a-b)[Math.floor(0.9*v.length)]||0;
+  if (metric === "p95") return v.sort((a,b)=>a-b)[Math.floor(0.95*v.length)]||0;
+  if (metric === "p99") return v.sort((a,b)=>a-b)[Math.floor(0.99*v.length)]||0;
+  return 0;
+}
+function updateRtChart() {
+  const metric = document.querySelector('input[name="rtMetric"]:checked').value;
+  Plotly.newPlot("globalRt", apis.map(a=>({
+    x: seconds.map(s=>s-start),
+    y: seconds.map(s => getMetricValue(a.perSecondRT[s]||[], metric)),
+    name: a.displayName,
+    mode: "lines+markers",
+    line: {width:2}
+  })), {
+    title: 'Response Time per API (' + metric.toUpperCase() + ')',
+    xaxis: {title:"Time (s)"},
+    yaxis: {title:"Response Time (ms)"},
+    height: 300,
+    legend: {orientation:"h"}
+  });
+}
+updateRtChart();
+
+/* ================= DUAL AXIS ================= */
+function renderDual(type){
+ const rps = seconds.map(s=>apis.reduce((t,a)=>t+(a.perSecond[s]||0),0));
+ const lat = seconds.map(s=>{
+   let v=[];
+   apis.forEach(a=>a.perSecondRT[s]&&v.push(...a.perSecondRT[s]));
+   if(type==="avg") return v.reduce((x,y)=>x+y,0)/(v.length||1);
+   if(type==="p90") return v.sort((a,b)=>a-b)[Math.floor(.9*v.length)]||0;
+   return v.sort((a,b)=>a-b)[Math.floor(.95*v.length)]||0;
+ });
+ Plotly.newPlot("dual",[
+   {x:seconds.map(s=>s-start),y:rps,name:"RPS",yaxis:"y1",mode:"lines+markers"},
+   {x:seconds.map(s=>s-start),y:lat,name:type.toUpperCase()+" Latency",yaxis:"y2",mode:"lines+markers"}
+ ],{title:"RPS vs Latency", yaxis:{title:"RPS"}, yaxis2:{overlaying:"y", side:"right", title:"Latency (ms)"}, xaxis:{title:"Time (s)"}, height:300, legend:{orientation:"h"}});
+}
+renderDual("avg");
+
+/* ================= ACCORDION CHARTS ================= */
+apis.forEach((a,i)=>{
+ Plotly.newPlot("rps_"+i,[{
+   x:seconds.map(s=>s-start),
+   y:seconds.map(s=>a.perSecond[s]||0),
+   mode:"lines+markers",
+   name:"RPS"
+ }],{title:"RPS Over Time",height:260,xaxis:{title:"Time (s)"},yaxis:{title:"RPS"}});
+
+ Plotly.newPlot("rt_"+i,["avg","p90","p95","max"].map(m=>({
+   x:seconds.map(s=>s-start),
+   y:seconds.map(s=>{
+     const v=a.perSecondRT[s]||[];
+     if(!v.length)return 0;
+     if(m==="avg") return v.reduce((x,y)=>x+y,0)/v.length;
+     if(m==="max") return Math.max(...v);
+     return v.sort((a,b)=>a-b)[Math.floor((m==="p90"?0.9:0.95)*v.length)];
+   }),
+   name:m,mode:"lines+markers"
+ })),{title:"Response Time Over Time",height:260,xaxis:{title:"Time (s)"},yaxis:{title:"ms"}});
+
+ Plotly.newPlot("status_"+i,Object.entries(a.status).map(([c,n])=>({
+   x:[c],y:[n],type:"bar",name:c
+ })),{title:"Status Codes",height:260,xaxis:{title:"Status Code"},yaxis:{title:"Count"}});
+
+ Plotly.newPlot("err_"+i,[{
+   x:seconds.map(s=>s-start),
+   y:seconds.map(s=>((a.perSecond[s]||0)?(a.fail/(a.pass+a.fail))*100:0)),
+   mode:"lines+markers",
+   name:"Error %"
+ }],{title:"Error % Over Time",height:260,xaxis:{title:"Time (s)"},yaxis:{title:"% Errors"}});
+});
+</script>
+
+<script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
+</body>
+</html>
+`;
+
+fs.writeFileSync(outFile, html);
+console.log("✅ Full enhanced report generated:", outFile);
+
+
+
+//node reportgenerator.js results.csv report_20m.html
+//node report_allure.js --html report_20m.html --p90sla 1500 --slaConfig
+//allure serve allure-results
