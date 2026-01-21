@@ -1,0 +1,97 @@
+import http from 'k6/http';
+import { sleep, check } from 'k6';
+import { SharedArray } from 'k6/data';
+// Import the reporter library for the HTML dashboard
+import { htmlReport } from "https://raw.githubusercontent.com/benc-uk/k6-reporter/main/dist/bundle.js";
+import { textSummary } from "https://jslib.k6.io/k6-summary/0.0.1/index.js";
+
+// ================================
+// CONFIGURATION
+// ================================
+export const options = {
+    discardResponseBodies: true,
+    // Add P99 and Min/Max to match your Artillery-style table needs
+    summaryTrendStats: ['avg', 'min', 'max', 'p(90)', 'p(95)', 'p(99)'], 
+    
+    thresholds: {
+        // Setting a threshold (SLA) ensures these transactions 
+        // appear as distinct rows in the HTML report table.
+        'http_req_duration{name:Transaction_GET}': ['p(95)<500'],
+        'http_req_duration{name:Transaction_POST}': ['p(95)<500'],
+    },
+
+    scenarios: {
+        long_run: {
+            executor: 'constant-arrival-rate',
+            rate: 10,            // 100 TPS
+            timeUnit: '10s',
+            duration: '20m',       // Run for 1 hour
+            preAllocatedVUs: 50,  // Adjust based on your API response time
+            maxVUs: 200,
+        },
+    },
+};
+
+// Load CSV data once
+const testData = new SharedArray('testData', function () {
+    const f = open('./data/test_data.csv');
+    return f.split('\n')
+        .filter((line) => line.trim() !== '')
+        .map((line) => {
+            const [name, address] = line.split(',');
+            return { name, address };
+        });
+});
+
+// ================================
+// MAIN SCENARIO
+// ================================
+export default function () {
+    // Pick a row based on the unique iteration index
+    const row = testData[__ITER % testData.length];
+    if (!row) return;
+
+    const params = {
+        headers: { 'Content-Type': 'application/json' },
+    };
+
+    // 1. GET Request
+    const getUrl = `https://8u0xag1lqh.execute-api.us-east-1.amazonaws.com/prod/test?name=${encodeURIComponent(row.name)}&address=${encodeURIComponent(row.address)}`;
+    const res1 = http.get(getUrl, {
+        tags: { name: 'Transaction_GET' }, // Tagging for the report table
+    });
+
+    check(res1, {
+        'GET status is 200': (r) => r.status === 200,
+    });
+
+    sleep(0.1);
+
+    // 2. POST Request
+    const postUrl = 'https://8u0xag1lqh.execute-api.us-east-1.amazonaws.com/prod/test';
+    const payload = JSON.stringify({
+        name: row.name,
+        address: row.address,
+        email: `${row.name.replace(/\s+/g, '.').toLowerCase()}@example.com`,
+    });
+
+    const res2 = http.post(postUrl, payload, {
+        headers: params.headers,
+        tags: { name: 'Transaction_POST' }, // Tagging for the report table
+    });
+
+    check(res2, {
+        'POST status is 200': (r) => r.status === 200,
+    });
+}
+
+// ================================
+// REPORT GENERATION
+// ================================
+export function handleSummary(data) {
+    console.log('Test Finished. Preparing HTML Report...');
+    return {
+        "summary.html": htmlReport(data), // The "Artillery-style" professional dashboard
+        "stdout": textSummary(data, { indent: " ", enableColors: true }), // Standard CLI output
+    };
+}
