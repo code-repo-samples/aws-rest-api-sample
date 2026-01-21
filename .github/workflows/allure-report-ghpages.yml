@@ -40,8 +40,10 @@ jobs:
       # 7. Generate static Allure report
       - name: Generate Allure Report
         run: |
-          mkdir -p allure-results
-          cp -r reports/* allure-results/
+          # Folder already created by report_allure.js
+          # mkdir -p allure-results  # optional, already exists
+          # cp -r reports/* allure-results/  # remove this line
+          # Generate static HTML report
           allure generate allure-results --clean -o allure-report
 
       # 8. Deploy to GitHub Pages
