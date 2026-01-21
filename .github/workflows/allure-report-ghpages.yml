@@ -43,50 +43,59 @@ jobs:
       - name: Generate Allure results
         run: node report_allure.js --html report_20m.html --p90sla ${{ github.event.inputs.p90_sla }} --slaConfig
 
-      # 6. Merge previous Allure results for cumulative report
+      # 6️⃣ Merge previous allure-results for cumulative report
       - name: Merge previous Allure results
         run: |
           mkdir -p allure-results
+
+          # Fetch reports branch
           git fetch origin reports
           git checkout reports || git checkout -b reports
+
+          # Copy previous results if exist
           if [ -d reports/allure-results ]; then
             cp -r reports/allure-results/* allure-results/
           fi
+
+          # Copy new results from this run
           cp -r allure-results-new/* allure-results/ || echo "No new results"
 
-      # 7. Generate cumulative Allure report
+      # 7️⃣ Generate cumulative Allure report (Allure 3)
       - name: Generate cumulative Allure report
-        run: allure generate allure-results
+        run: |
+          rm -rf allure-report           # Allure 3: remove old report manually
+          allure generate allure-results -o allure-report
 
-      # 8. Copy cumulative report and custom HTML into reports branch folder
+      # 8️⃣ Copy cumulative report and custom HTML to reports branch
       - name: Prepare reports folder
         run: |
           mkdir -p reports/allure-report
           cp -r allure-report/* reports/allure-report/
           cp report_20m.html reports/allure-report/
 
-      # 9. Update index.html to link cumulative report
+      # 9️⃣ Update top-level index.html
       - name: Update index.html
         run: |
           echo "<h1>Allure Cumulative Report</h1>" > reports/index.html
           echo "<a href='allure-report/index.html'>View Latest Report</a><br>" >> reports/index.html
 
-      # 10. Commit and safely push to reports branch
+      # 🔟 Commit and safely push reports
       - name: Commit and push reports
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
-      
+
           git fetch origin reports
           git checkout reports || git checkout -b reports
-          git reset --hard origin/reports  # Align with remote to avoid conflicts
-      
+          git reset --hard origin/reports  # align with remote
+
           git add reports/
           git commit -m "Update cumulative Allure report (run #${GITHUB_RUN_NUMBER})" || echo "No changes to commit"
-          git push origin reports --force  # Force push to overwrite index.html and report folder
+
+          # Force push avoids merge conflicts for index.html
+          git push origin reports --force
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-
 
       # # Step 6: Generate static Allure report
       # - name: Generate static Allure report
