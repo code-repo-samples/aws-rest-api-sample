@@ -157,3 +157,8 @@ try {
 
 
 //node report_allure.js --html report.html --p90sla 150 --slaConfig sla.conf
+
+//node report_allure.js --html report.html --appName "Logout-API" --runId "Build-1a" --p90sla 150
+//allure serve allure-results
+//npm install cheerio uuid allure-js-commons mime-types yargs
+
