@@ -43,26 +43,68 @@ jobs:
       - name: Generate Allure results
         run: node report_allure.js --html report_20m.html --p90sla ${{ github.event.inputs.p90_sla }} --slaConfig
 
-      # Step 6: Generate static Allure report
-      - name: Generate static Allure report
+      # 6. Merge previous Allure results (optional cumulative)
+      - name: Merge previous Allure results
+        run: |
+          mkdir -p allure-results
+          if [ -d reports/allure-results ]; then
+            cp -r reports/allure-results/* allure-results/
+          fi
+          cp -r allure-results-new/* allure-results/ || echo "No new results folder"
+
+      # 7. Generate cumulative Allure report
+      - name: Generate cumulative Allure report
         run: allure generate allure-results
 
-      # Step 7: Upload reports as GitHub artifacts
-      - name: Upload reports
-        uses: actions/upload-artifact@v4
-        with:
-          name: test-reports
-          path: |
-            report_20m.html
-            allure-report/
+      # 8. Copy reports into versioned folder
+      - name: Copy reports to repo folder
+        run: |
+          RUN_FOLDER=reports/run-${GITHUB_RUN_NUMBER}
+          mkdir -p $RUN_FOLDER
+          cp -r allure-report/* $RUN_FOLDER/
+          cp report_20m.html $RUN_FOLDER/
 
-      # Step 8 (Optional): Deploy to GitHub Pages
-      - name: Deploy to GitHub Pages
-        uses: peaceiris/actions-gh-pages@v4
-        with:
-          github_token: ${{ secrets.GITHUB_TOKEN }}
-          publish_dir: gh-pages
-        # uses: peaceiris/actions-gh-pages@v4
-        # with:
-        #   github_token: ${{ secrets.GITHUB_TOKEN }}
-        #   publish_dir: ./allure-report
+      # 9. Update simple index.html to list all reports
+      - name: Update reports index
+        run: |
+          echo "<h1>Allure Reports</h1>" > reports/index.html
+          for f in reports/run-* ; do
+            if [ -d "$f" ]; then
+              echo "<a href='$f/index.html'>$(basename $f)</a><br>" >> reports/index.html
+            fi
+          done
+
+      # 10. Commit and push updated reports
+      - name: Commit and push reports
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add reports/
+          git commit -m "Add Allure report for run #${GITHUB_RUN_NUMBER}" || echo "No changes to commit"
+          git push origin HEAD:${GITHUB_REF}
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      # # Step 6: Generate static Allure report
+      # - name: Generate static Allure report
+      #   run: allure generate allure-results
+
+      # # Step 7: Upload reports as GitHub artifacts
+      # - name: Upload reports
+      #   uses: actions/upload-artifact@v4
+      #   with:
+      #     name: test-reports
+      #     path: |
+      #       report_20m.html
+      #       allure-report/
+
+      # # Step 8 (Optional): Deploy to GitHub Pages
+      # - name: Deploy to GitHub Pages
+      #   uses: peaceiris/actions-gh-pages@v4
+      #   with:
+      #     github_token: ${{ secrets.GITHUB_TOKEN }}
+      #     publish_dir: gh-pages
+      #   # uses: peaceiris/actions-gh-pages@v4
+      #   # with:
+      #   #   github_token: ${{ secrets.GITHUB_TOKEN }}
+      #   #   publish_dir: ./allure-report
