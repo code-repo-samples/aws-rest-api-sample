@@ -1,4 +1,4 @@
-name: Allure Report Workflow
+name: Allure Reports (Cumulative)
 
 on:
   workflow_dispatch:
@@ -17,40 +17,41 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
-      # Step 1: Checkout the repo
+      # 1. Checkout repo
       - name: Checkout repository
         uses: actions/checkout@v3
+        with:
+          fetch-depth: 0
 
-      # Step 2: Set up Node.js
-      - name: Set up Node.js
+      # 2. Set up Node.js
+      - name: Setup Node.js
         uses: actions/setup-node@v3
         with:
           node-version: '20'
 
-      # Step 3: Install Allure CLI
-      - name: Install Allure CLI
+      # 3. Install Allure CLI and Node dependencies
+      - name: Install Allure CLI and dependencies
         run: |
-          npm install -g allure
-          # Install any Node.js dependencies required by your scripts
+          npm install -g allure-commandline@3.0.1
           npm install cheerio uuid allure-js-commons mime-types yargs csv-parse
-        
 
-      # Step 4: Generate HTML report from CSV
+      # 4. Generate custom HTML report
       - name: Generate custom HTML report
         run: node reportgenerator.js ${{ github.event.inputs.csv_file }} report_20m.html
 
-      # Step 5: Apply SLA and generate Allure results
+      # 5. Generate Allure results
       - name: Generate Allure results
         run: node report_allure.js --html report_20m.html --p90sla ${{ github.event.inputs.p90_sla }} --slaConfig
 
-      # 6. Merge previous Allure results (optional cumulative)
+      # 6. Merge previous results (optional cumulative)
       - name: Merge previous Allure results
         run: |
           mkdir -p allure-results
-          if [ -d reports/allure-results ]; then
-            cp -r reports/allure-results/* allure-results/
-          fi
-          cp -r allure-results-new/* allure-results/ || echo "No new results folder"
+          # Pull previous results from reports branch
+          git fetch origin reports
+          git checkout reports -- reports/allure-results || echo "No previous results"
+          cp -r reports/allure-results/* allure-results/ 2>/dev/null || echo "No previous results"
+          cp -r allure-results-new/* allure-results/ || echo "No new results"
 
       # 7. Generate cumulative Allure report
       - name: Generate cumulative Allure report
@@ -64,7 +65,7 @@ jobs:
           cp -r allure-report/* $RUN_FOLDER/
           cp report_20m.html $RUN_FOLDER/
 
-      # 9. Update simple index.html to list all reports
+      # 9. Update index.html for easy navigation
       - name: Update reports index
         run: |
           echo "<h1>Allure Reports</h1>" > reports/index.html
@@ -74,16 +75,17 @@ jobs:
             fi
           done
 
-      # 10. Commit and push updated reports
+      # 10. Commit and push reports to reports branch
       - name: Commit and push reports
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
           git add reports/
           git commit -m "Add Allure report for run #${GITHUB_RUN_NUMBER}" || echo "No changes to commit"
-          git push origin HEAD:${GITHUB_REF}
+          git push origin HEAD:reports
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
 
       # # Step 6: Generate static Allure report
       # - name: Generate static Allure report
