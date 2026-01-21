@@ -32,7 +32,7 @@ jobs:
       # 3. Install Allure CLI and Node dependencies
       - name: Install Allure CLI and dependencies
         run: |
-          npm install -g allure-commandline@3.0.1
+          npm install -g allure
           npm install cheerio uuid allure-js-commons mime-types yargs csv-parse
 
       # 4. Generate custom HTML report
